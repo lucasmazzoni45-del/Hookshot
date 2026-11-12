@@ -475,8 +475,8 @@ HDR, Detail, and GPU and memory (last: the rows to change when something is wron
 - **ASTC as RGBA8** (Debug tab, Developer): the AMD texture workaround below.
 - **Shader compile** is what a draw does the first time its shader or pipeline is still being built. With **Wait where
   needed**, the default, a draw that writes no memory whose picture the last frame can fill in (a target not cleared that frame) is
-  left out for a frame or two; any other waits, a pipeline for a quick build without the driver's optimizer (the full build
-  replaces it shortly after). **Asynchronous** also leaves out a pending pipeline whose target was made or cleared that frame, so
+  left out for a frame or two; any other waits: on AMD cards for a quick build of its pipeline without the driver's optimizer (the full build
+  replaces it shortly after; never for task or mesh programs), on other cards for the full build. **Asynchronous** also leaves out a pending pipeline whose target was made or cleared that frame, so
   effects seen for the first time stutter less, but one can be missing for a few frames, and one drawn only once can look wrong
   until it is drawn again. A draw that writes memory, or whose shader is still being translated, waits in both.
 - **Game speed:** with Per frame, the game runs slower whenever it is below 60 fps. Real time keeps it at normal speed

@@ -766,7 +766,7 @@ MENU_HINTS(hn_mesh_mode, 0, "The GPU's own mesh shaders where it has them, the c
            "The compute path on every GPU: try it if your card crashes or leaves objects out. Usually a little slower.")
 MENU_HINTS(hn_shader_compile, 0,
            "Left out for a frame or two where the last frame's picture fills in and it writes no memory; otherwise it waits, for "
-           "a quick build.",
+           "a quick build on AMD cards, the full build on others.",
            "A pipeline still being built is left out wherever it is not writing memory, so no first-time stutter there. An effect "
            "can be missing for a few frames, and one drawn only once can look wrong until it is drawn again. A draw that writes "
            "memory, or whose shader is still being translated, still waits.")

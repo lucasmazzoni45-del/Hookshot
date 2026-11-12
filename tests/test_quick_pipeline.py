@@ -1,11 +1,11 @@
 """A draw that has to wait for its pipeline gets one at once: from a cache if the driver has it, else built without the
 driver's optimizer, standing in until the queued full build takes its place (gpu/vk/vk_draw.cpp quick_pipeline; no
-game/GPU).
+game/GPU). On by default for AMD only (vendor 0x1002); RX_VK_QUICK_WAIT decides either way; never for a task or mesh program.
 
 quick_pipeline is compiled as it is in vk_draw.cpp, beside a stand-in driver that has the pipeline compiled, has to compile
 it, or cannot make it, and a worker whose full build lands while the stand-in is built: the full build is never run in the
 draw, a stand-in never replaces a full build, and one that lost the race is destroyed. The source checks cover the rest of
-the change: the stand-in's build flags and caches, the Shader compile row (Wait where needed by default), the translation
+the change: the stand-in's build flags and caches, the Shader compile row (Wait where needed by default), the AMD-only default and the task/mesh exclusion, the translation
 jobs ahead of the pipeline builds.
 python -I -B tests/test_quick_pipeline.py
 """
@@ -27,18 +27,24 @@ FIXTURE = r"""
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <vector>
+#include "gpu/vk/compat/hookshot_env.h"
 using VkPipeline = uint64_t;
 using VkPrimitiveTopology = int;
 #define VK_NULL_HANDLE 0
 #define PROF_EXACT()
-struct Program { uint64_t key; };
+#define VK_SHADER_STAGE_VERTEX_BIT 1
+#define VK_SHADER_STAGE_TASK_BIT_EXT 0x40
+#define VK_SHADER_STAGE_MESH_BIT_EXT 0x80
+struct Stage { unsigned vk_stage; };
+struct Program { uint64_t key; std::vector<Stage> stages = {{VK_SHADER_STAGE_VERTEX_BIT}}; };
 struct NvnState {};
 struct Targets {};
 struct PipeEntry {
     std::atomic<bool> ready{false};
     std::atomic<VkPipeline> pipeline{VK_NULL_HANDLE};
 };
-struct { int device; struct { bool pipelineCreationCacheControl; } vk13; } dev;
+struct { int device; struct { bool pipelineCreationCacheControl; } vk13; struct { unsigned vendorID; } props; } dev;
 int64_t st_waits;
 double st_wait_ms;
 std::atomic<int64_t> st_quick, st_quick_us;
@@ -66,9 +72,20 @@ inline void vkDestroyPipeline(int, VkPipeline, void*) { destroyed++; }
 int main(int argc, char** argv) {
     NvnState s;
     Targets at;
-    if (argc > 1 && !std::strcmp(argv[1], "off")) {   // (RX_VK_QUICK_WAIT=0: the full build waited for, as before)
+    // (argv: the mode, then the vendor id: the switch is read once, so each case is a run of its own)
+    const char* mode = argc > 1 ? argv[1] : "default";
+    dev.props.vendorID = argc > 2 ? (unsigned)std::strtoul(argv[2], nullptr, 16) : 0x1002;
+    if (!std::strcmp(mode, "off")) {   // (not on: the full build waited for, as before: RX_VK_QUICK_WAIT=0 on AMD, or unset on another vendor)
         PipeEntry e;
+        dev.vk13.pipelineCreationCacheControl = true;
         CHECK(!quick_pipeline(e, Program{1}, s, at, 0) && !e.ready && !asks && !quick_builds && !st_waits);
+        return 0;
+    }
+    if (!std::strcmp(mode, "forced")) {   // (RX_VK_QUICK_WAIT=1: on another vendor's GPU too)
+        PipeEntry e;
+        dev.vk13.pipelineCreationCacheControl = true;
+        driver = COLD;
+        CHECK(quick_pipeline(e, Program{1}, s, at, 0) && e.ready && e.pipeline == 201 && quick_builds == 1);
         return 0;
     }
     dev.vk13.pipelineCreationCacheControl = true;
@@ -98,6 +115,23 @@ int main(int argc, char** argv) {
     PipeEntry plain;
     CHECK(quick_pipeline(plain, Program{5}, s, at, 0) && plain.pipeline == 205 && asks == asked);
     CHECK(!full_builds && !asked_quick && destroyed == 1);
+    // (a task or mesh program: never the unoptimized stand-in, whether or not the driver can be asked; one it has still comes back)
+    for (unsigned bit : {VK_SHADER_STAGE_TASK_BIT_EXT, VK_SHADER_STAGE_MESH_BIT_EXT})
+        for (bool control : {true, false}) {
+            dev.vk13.pipelineCreationCacheControl = control;
+            driver = COLD;
+            const int before = quick_builds;
+            Program mesh{6};
+            mesh.stages.push_back({bit});
+            PipeEntry m;
+            CHECK(!quick_pipeline(m, mesh, s, at, 0) && !m.ready && !m.pipeline && quick_builds == before && !quick_build);
+        }
+    dev.vk13.pipelineCreationCacheControl = true;
+    driver = HAS;
+    Program mesh_cached{7};
+    mesh_cached.stages.push_back({VK_SHADER_STAGE_MESH_BIT_EXT});
+    PipeEntry mc;
+    CHECK(quick_pipeline(mc, mesh_cached, s, at, 0) && mc.ready && mc.pipeline == 107);
     return 0;
 }
 """
@@ -137,6 +171,8 @@ def between(text, start, end="\n}\n"):
 
 def check_source(draw, shader, menu, menu_h):
     """What the fixture does not run: the stand-in's flags and caches, the Shader compile row, the translation jobs' order"""
+    if "return dev.props.vendorID == 0x1002;" not in between(draw, "bool quick_pipeline(") or             "VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT)) return false;" not in between(draw, "bool quick_pipeline("):
+        raise SystemExit("quick_pipeline: not AMD-only by default, or builds a stand-in for a task or mesh program")
     build = between(draw, "VkPipeline build_graphics(const Program& p, const NvnState& s, const Targets& at, "
                           "VkPrimitiveTopology topo, int part, bool* cold) {")
     if "if (noopt || quick_build) ci.flags |= VK_PIPELINE_CREATE_DISABLE_OPTIMIZATION_BIT;" not in build:
@@ -183,17 +219,27 @@ def main():
         src = Path(tmp) / "quick_pipeline.cpp"
         exe = Path(tmp) / "quick_pipeline"
         src.write_text(FIXTURE.replace("@CODE@", code), encoding="utf-8")
-        subprocess.run([args.cxx, "-std=c++20", "-Wall", "-Wextra", "-Werror", str(src), "-o", str(exe)], check=True)
+        subprocess.run([args.cxx, "-std=c++20", "-Wall", "-Wextra", "-Werror", "-I", str(ROOT), "-I", str(vk / "compat"), str(src), "-o", str(exe)], check=True)
         env = {k: v for k, v in os.environ.items() if k != "RX_VK_QUICK_WAIT"}
-        subprocess.run([str(exe)], check=True, timeout=60, env=env)
-        subprocess.run([str(exe), "off"], check=True, timeout=60, env=dict(env, RX_VK_QUICK_WAIT="0"))
+        run = lambda mode, vendor, **e: subprocess.run([str(exe), mode, vendor], check=True, timeout=60, env=dict(env, **e))
+        run("default", "1002")                                      # (AMD, switch unset: on)
+        run("default", "1002", RX_VK_QUICK_WAIT="1")                # (AMD, forced on)
+        run("default", "1002", RX_VK_QUICK_WAIT="")                 # (empty counts as unset)
+        run("off", "1002", RX_VK_QUICK_WAIT="0")                    # (AMD, forced off)
+        run("off", "1002", RX_VK_QUICK_WAIT="off")
+        run("off", "10de")                                          # (NVIDIA, unset: off by default)
+        run("off", "8086")                                          # (Intel, unset: off by default)
+        run("off", "10de", RX_VK_QUICK_WAIT="")
+        run("forced", "10de", RX_VK_QUICK_WAIT="1")                 # (NVIDIA, asked for: on)
+        run("forced", "8086", RX_VK_QUICK_WAIT="on")
         persist = between(draw, "bool targets_persistent(const Targets& at) {") + "\n}\n"
         src2 = Path(tmp) / "targets_persistent.cpp"
         exe2 = Path(tmp) / "targets_persistent"
         src2.write_text(PERSIST_FIXTURE.replace("@CODE@", persist), encoding="utf-8")
         subprocess.run([args.cxx, "-std=c++20", "-Wall", "-Wextra", "-Werror", str(src2), "-o", str(exe2)], check=True)
         subprocess.run([str(exe2)], check=True, timeout=60)
-    print("PASS: a waiting draw's pipeline comes from a cache or a quick build, and the full build takes its place; "
+    print("PASS: on AMD (or asked for) a waiting draw's pipeline comes from a cache or a quick build (never a mesh program's), "
+          "and the full build takes its place; "
           "a target cleared this frame is not left to the last frame's picture")
 
 

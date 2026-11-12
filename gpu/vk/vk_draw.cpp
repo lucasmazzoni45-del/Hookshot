@@ -2047,9 +2047,16 @@ PipeEntry* graphics_pipeline(const Program& p, const NvnState& s, const Targets&
 /// 5080, longer behind one a worker had already started: an area's first effects stuttered. Asked first without compiling, one
 /// the driver or our caches have comes back at once, optimized (predict_run's are in the driver's own cache); else one is built
 /// here without the driver's optimizer, in a fraction of that. It stands in as a linked one does, until the queued full build
-/// takes its place. True when the entry is ready; false: the full build is waited for. RX_VK_QUICK_WAIT=0: always, as before
+/// takes its place. True when the entry is ready; false: the full build is waited for. On AMD only by default (measured there;
+/// other vendors wait for the full build, as before). RX_VK_QUICK_WAIT=1: on any GPU; =0: off, also on AMD. Never the unoptimized
+/// stand-in for a task or mesh program (on RADV that build resets the GPU, issue 1000; build_graphics' own exclusion of them
+/// does not see a quick build): one the driver has already compiled still comes back from its cache.
 bool quick_pipeline(PipeEntry& e, const Program& p, const NvnState& s, const Targets& at, VkPrimitiveTopology topo) {
-    static const bool on = !getenv("RX_VK_QUICK_WAIT") || atoi(getenv("RX_VK_QUICK_WAIT")) != 0;
+    static const bool on = [] {
+        const char* v = getenv("RX_VK_QUICK_WAIT");
+        if (v && *v) return !env_value_off(v);   // (hookshot_env.h: the switches' one rule; either way)
+        return dev.props.vendorID == 0x1002;     // (unset: AMD only)
+    }();
     if (!on) return false;
     PROF_EXACT();
     const auto t0 = std::chrono::steady_clock::now();
@@ -2057,6 +2064,8 @@ bool quick_pipeline(PipeEntry& e, const Program& p, const NvnState& s, const Tar
     VkPipeline made = dev.vk13.pipelineCreationCacheControl ? build_graphics(p, s, at, topo, -1, &cold) : VK_NULL_HANDLE;
     const bool quick = !made;
     if (quick) {
+        for (const Stage& st : p.stages)   // (no stand-in for a task or mesh program: the full build is waited for)
+            if (st.vk_stage & (VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT)) return false;
         struct Quick { Quick() { quick_build = true; } ~Quick() { quick_build = false; } } scope;   // (this build only)
         made = build_graphics(p, s, at, topo);
     }

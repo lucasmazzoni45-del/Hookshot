@@ -77,7 +77,7 @@ struct Options {
     int mesh_mode = 0;    // task and mesh programs: 0 Automatic, 1 Native, 2 Compute (gpu/vk/vk_main.cpp: mesh_shaders=;
                           // RX_VK_FORCE_MESH_FALLBACK and RX_VK_TASK_MESH_FALLBACK over it)
     int async_pipelines = 0;   // Shader compile: 0 Wait where needed, the default (a draw into targets made or cleared this
-                               // frame waits, for a quick build), 1 Asynchronous (a pending pipeline is left out whatever its targets hold, unless
+                               // frame waits, on AMD for a quick build, elsewhere for the full build), 1 Asynchronous (a pending pipeline is left out whatever its targets hold, unless
                                // it writes memory).
                                // gpu/vk/vk_draw.cpp; RX_VK_PIPE_SKIP=0 over it
     int descriptor_reuse = 1;  // (on by default since options_version 4) a draw keeps its descriptors through other slots' registrations (gpu/vk/vk_draw.cpp; RX_VK_DESC_REUSE)
