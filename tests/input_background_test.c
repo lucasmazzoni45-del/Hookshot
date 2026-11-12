@@ -38,7 +38,7 @@ static int pad_bind[HOS_KEY_N][2];   /* (the ocarina note layer reads it; hos_oc
 static SRWLOCK pad_bind_lock = SRWLOCK_INIT;
 static int pad_after_menu;
 static LONG oc_consumed_keys[256];
-static uint64_t oc_consumed_pads;
+static volatile uint64_t oc_consumed_pads;   /* (volatile: only written here, which clang 23 warns about under -Werror) */
 volatile uint64_t hos_oc_note_bits; volatile int hos_oc_wait; volatile int hos_oc_last_kind; volatile unsigned hos_oc_beat;
 static unsigned char *memory;
 static char last_log[256];
