@@ -1,0 +1,100 @@
+"""CPU check of which bindings of read-back ranges go directly to guest memory.
+
+python -I -B tests/test_rb_direct.py [--cxx clang++]
+"""
+import argparse
+import os
+from pathlib import Path
+import subprocess
+import tempfile
+
+ROOT = Path(__file__).resolve().parents[1]
+RUN_ALL_ARGS = ["--cxx", "{cxx}"]
+
+
+def block(text, marker):
+    start = text.index(marker)
+    end = text.index('{', start) + 1
+    depth = 1
+    while depth:
+        depth += (text[end] == '{') - (text[end] == '}')
+        end += 1
+    return text[start:end]
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--cxx', default='g++')
+    parser.add_argument('--source', type=Path, default=ROOT / 'gpu/vk/vk_memory.cpp')
+    args = parser.parse_args()
+    text = args.source.read_text(encoding='utf-8')
+    bind = block(text, 'BufferRef gpu_buffer_bind(')
+    direct = bind[bind.index('if (rb_direct_inside(g0, size))'):]
+    direct = direct[:direct.index('return remember(')]
+    assert 'if (written) note_direct_write(*p, g0 - p->lo, size);' in direct, 'a written direct binding keeps the read-back wait and the direct_write_epoch bookkeeping'
+    switch = block(text, 'bool rb_direct_on(')
+    assert 'atoi' not in switch and 'env_value_off(e)' in switch, 'the switch reads its value by the env_value_off rule'
+    assert 'size > kRbDirectMax' in block(text, 'void memory_rb_direct_note('), 'only small ranges go direct'
+    assert 'cut_rb_direct' not in text, 'write-backs of mirror bindings must not be cut'
+    assert 'rb_direct_forget_pool(old->lo, old->hi);' in block(text, 'void retire_pool(std::map<uint64_t, Pool>::iterator it) {'), 'a retired pool drops its ranges'
+    fixture = r'''
+#include <atomic>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include "gpu/vk/compat/hookshot_env.h"
+struct { struct { uint32_t vendorID; } props; } dev;
+bool mirror_on() { return true; }
+#define CHECK(ok) do { if (!(ok)) { std::fprintf(stderr, "failed line %d\n", __LINE__); std::exit(1); } } while (0)
+''' + block(text, 'bool rb_direct_on(') + block(text, 'struct RbRange {') + r''';
+RbRange rb_direct_ranges[512];
+std::atomic<int> rb_direct_range_n{0};
+''' + block(text, 'bool rb_direct_inside(') + block(text, 'bool rb_direct_range_add(') + block(text, 'void rb_direct_range_forget(') + r'''
+int main(int argc, char** argv) {
+    if (argc > 1) {   // the default per vendor, and an explicit value over it: argv[1] is the vendor ID, the environment the switch
+        dev.props.vendorID = (uint32_t)std::strtoul(argv[1], nullptr, 16);
+        std::puts(rb_direct_on() ? "on" : "off");
+        return 0;
+    }
+    CHECK(!rb_direct_inside(0x1000, 0x10));                                // nothing noted
+    CHECK(rb_direct_range_add(0x1000, 0x3000));
+    CHECK(rb_direct_inside(0x1000, 0x2000));                               // the whole range
+    CHECK(rb_direct_inside(0x1800, 0x100));                                // inside it
+    CHECK(!rb_direct_inside(0x800, 0x1000));                               // starts before it: stays mirrored
+    CHECK(!rb_direct_inside(0x2800, 0x1000));                              // ends after it: stays mirrored
+    CHECK(!rb_direct_inside(0x1000, 0));
+    CHECK(rb_direct_range_add(0x1000, 0x2000) && rb_direct_range_n.load() == 1);   // already covered: no new slot
+    CHECK(rb_direct_range_add(0x8000, 0x9000) && rb_direct_range_n.load() == 2);
+    rb_direct_range_forget(0x8000, 0x10000);                               // only what lies in the pool goes
+    CHECK(!rb_direct_inside(0x8000, 0x100) && rb_direct_inside(0x1000, 0x100));
+    CHECK(rb_direct_range_add(0xA000, 0xB000) && rb_direct_range_n.load() == 2);   // the freed slot is used again
+    CHECK(rb_direct_inside(0xA000, 0x100));
+    for (uint64_t i = 2; i < 512; i++) CHECK(rb_direct_range_add(0x100000 + i * 0x2000, 0x100000 + i * 0x2000 + 0x1000));
+    CHECK(rb_direct_range_n.load() == 512);
+    CHECK(!rb_direct_range_add(0x9000000, 0x9001000));                     // full: not bound direct
+    CHECK(!rb_direct_inside(0x9000000, 0x100));
+    std::puts("rb_direct ok");
+}
+'''
+    with tempfile.TemporaryDirectory() as d:
+        src, exe = Path(d) / 't.cpp', Path(d) / 't'
+        src.write_text(fixture, encoding='utf-8')
+        subprocess.run([args.cxx, '-std=c++20', '-O1', '-I', str(ROOT), '-o', str(exe), str(src)], check=True)
+        subprocess.run([str(exe)], check=True)
+        env = {k: v for k, v in os.environ.items() if k != 'RX_VK_RB_DIRECT'}
+
+        def switch(vendor, value=None):
+            e = dict(env)
+            if value is not None:
+                e['RX_VK_RB_DIRECT'] = value
+            return subprocess.run([str(exe), vendor], check=True, env=e, capture_output=True, text=True).stdout.strip()
+
+        assert switch('10de') == 'off', 'off by default on NVIDIA'
+        assert switch('1002') == 'on' and switch('8086') == 'on', 'on by default elsewhere'
+        assert switch('10de', '1') == 'on' and switch('10de', 'on') == 'on', 'an explicit value overrides on NVIDIA'
+        for off in ('0', 'off', 'false', 'No', ''):
+            assert switch('1002', off) == 'off', f'RX_VK_RB_DIRECT={off!r} is off'
+
+
+if __name__ == '__main__':
+    main()

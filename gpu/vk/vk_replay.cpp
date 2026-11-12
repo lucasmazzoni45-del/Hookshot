@@ -2471,6 +2471,7 @@ bool readback_wait_value(uint64_t v) {
     return false;
 }
 void invalidate(uint64_t gpu, uint64_t size) {
+    memory_rb_direct_note(host->gpu_guest(gpu), size);
     static const bool log_inv = env_on("RX_VK_LOG_INVALIDATE");
     static std::atomic<int> logged{0};
     if (log_inv && logged++ < 400) {

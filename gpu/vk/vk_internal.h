@@ -133,6 +133,7 @@ struct BufferRef {
     }
 };
 bool memory_init();                                   // vk_memory.cpp
+void memory_rb_direct_note(uint64_t guest, uint64_t size);   // (test: RX_VK_RB_DIRECT, vk_memory.cpp)
 void memory_cpu_owned(uint64_t guest, uint64_t size);   // (hookshot: words the replay writes on the CPU, left out of write-backs)
 // (hookshot) The replay's own CPU writes of guest memory, by GPU address: every one goes through guest_cpu_write (or, for a
 // write made in pieces, host->gpu_write and then guest_cpu_wrote over the whole range), so that the write-back diff's shadows
