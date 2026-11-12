@@ -601,6 +601,7 @@ const char* tx_mesh_mode(int v) {
     static const char* t[] = {"Automatic", "Native", "Compute"};
     return (unsigned)v < 3 ? t[v] : t[0];
 }
+const char* tx_shader_compile(int v) { return v ? "Asynchronous" : "Wait where needed"; }   // (opts.async_pipelines)
 const char* tx_preset(int v) {
     static const char* t[] = {"Custom", "Minimum (4GB)", "Low (6GB)", "Balanced (8GB)", "High (12GB)", "Ultra (16GB+)"};
     return t[std::min(std::max(v, 0), 5)];
@@ -763,6 +764,12 @@ MENU_HINTS(hn_mesh_mode, 0, "The GPU's own mesh shaders where it has them, the c
            "AMD always the compute path: RADV's mesh shaders stop the GPU, issue 2245).",
            "The GPU's own mesh shaders for every draw. A GPU without them still uses the compute path.",
            "The compute path on every GPU: try it if your card crashes or leaves objects out. Usually a little slower.")
+MENU_HINTS(hn_shader_compile, 0,
+           "Left out for a frame or two where the last frame's picture fills in and it writes no memory; otherwise it waits, for "
+           "a quick build.",
+           "A pipeline still being built is left out wherever it is not writing memory, so no first-time stutter there. An effect "
+           "can be missing for a few frames, and one drawn only once can look wrong until it is drawn again. A draw that writes "
+           "memory, or whose shader is still being translated, still waits.")
 MENU_HINTS(hn_fps, 0, nullptr, "The frame rate. With frame generation on, the game's own rate too.",
            "And the game's frame time, with its 1% low: the rate of its slowest 1% of frames over the last 10 seconds.",
            "And a graph of the last 4 seconds' frame times, with a line at the Game frame rate cap's.",
@@ -878,6 +885,9 @@ Row rows[] = {
     {TAB_GRAPHICS, "VRAM budget", &opts.vram_budget, 0, kVramBudgets - 1, 1, tx_vram_budget,
      "How much video memory the game's textures may use, and its copies of game memory with them. Lower it if the game "
      "stutters after a while of play; a preset sets it.", hn_vram_budget, false, true},
+    {TAB_GRAPHICS, "Shader compile", &opts.async_pipelines, 0, 1, 1, tx_shader_compile,
+     "What a draw does the first time its shader or pipeline is still being built. Changes at once.", hn_shader_compile, false,
+     true},
     {TAB_GRAPHICS, "Mesh shaders", &opts.mesh_mode, 0, 2, 1, tx_mesh_mode,
      "How the game's mesh programs (much of the scenery) run: on the GPU's own mesh shaders, or as compute shaders, which "
      "every GPU has. Applies after a restart.", hn_mesh_mode, true, true},

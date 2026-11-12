@@ -22,8 +22,9 @@ def main():
     build = between(draw, "VkPrimitiveTopology topo, int part, bool* cold) {", "\n}\n")
     for line, why in (
             ("const bool lib_cached = (part == 1 || part == 2) && gpl_libs_cached();", "only the two shader libraries are kept"),
+            # (quick_build: a waiting draw's stand-in, kept out of it; tests/test_quick_pipeline.py)
             # (driver_ask_cache: none, except predicted_check's empty scratch cache under driver_cache_only)
-            ("const VkPipelineCache cache = lib_cached || (part < 0 && !driver_cache_only) ? pcache : driver_ask_cache;",
+            ("const VkPipelineCache cache = lib_cached || (part < 0 && !driver_cache_only && !quick_build) ? pcache : driver_ask_cache;",
              "the libraries are not built into the pipeline cache"),
             # (graphics_with: pcache through the play caches, tests/test_pipeline_play_cache.py)
             ("VkResult r = graphics_with(cache, &ci, &pl);", "pipeline creation bypasses the chosen cache"),

@@ -78,6 +78,8 @@ void jobs_wait(const std::atomic<bool>& ready) {
     else { ++pipeline_waits; pipe_entry.ready.store(true, std::memory_order_release); }
 }
 bool targets_persistent(const Targets& at) { return at.persistent; }
+struct Options { int async_pipelines = 0; } opts;   // (the Shader compile row: Asynchronous widens only the targets' half)
+bool quick_pipeline(PipeEntry&, const Program&, const NvnState&, const Targets&, int) { return false; }   // (the full build is waited for)
 bool exposure_log_on() { return false; }
 void exposure_note(NvnState&, const Program&) {}
 void ensure_layout(Program&) {}
@@ -94,15 +96,15 @@ void decision(const Program* cp, const Targets& at) {
 }
 int failures;
 void check(bool ok, const char* label) { if (!ok) { ++failures; std::printf("FAIL %s\n", label); } }
-void scenario(int kind, bool translated, bool pipeline_hot, bool persistent) {
+void scenario(int kind, bool translated, bool pipeline_hot, bool persistent, int async = 0) {
     scans = early_reads = translation_waits = pipeline_waits = draws = output = st_pending_skips = 0;
-    Program p; current = &p; effect = kind;
+    Program p; current = &p; effect = kind; opts.async_pipelines = async;
     if (translated) publish();
     pipe_entry.ready.store(pipeline_hot, std::memory_order_release);
     const bool force = std::getenv("RX_VK_PIPE_SKIP") && std::atoi(std::getenv("RX_VK_PIPE_SKIP")) == 0;
     const bool legacy = std::getenv("RX_VK_PIPE_SKIP") && std::atoi(std::getenv("RX_VK_PIPE_SKIP")) == 2;
     const bool skip_unknown = legacy && !translated && persistent;
-    const bool should_draw = !skip_unknown && (pipeline_hot || force || !persistent || kind != 0);
+    const bool should_draw = !skip_unknown && (pipeline_hot || force || !(persistent || async) || kind != 0);
     decision(&p, {persistent});
     char label[120];
     std::snprintf(label, sizeof label, "kind%d translated%d hot%d persistent%d force%d", kind, translated, pipeline_hot, persistent, force);
@@ -111,7 +113,7 @@ void scenario(int kind, bool translated, bool pipeline_hot, bool persistent) {
     if (kind && should_draw) check(output == 42, "producer write absent at fake consumer");
     check(!early_reads, "metadata inspected before publication");
     check(translation_waits == int(!translated && !skip_unknown), "translation wait mode");
-    if (pipeline_hot || force || !persistent || skip_unknown) check(scans == 0, "unnecessary classification");
+    if (pipeline_hot || force || !(persistent || async) || skip_unknown) check(scans == 0, "unnecessary classification");
     check(pipeline_waits == int(!pipeline_hot && should_draw), "pending pipeline must publish before draw");
     std::printf("%s %s draws%d skips%d scans%d twait%d pwait%d\n", failures == before ? "PASS" : "RED", label,
                 draws, st_pending_skips, scans, translation_waits, pipeline_waits);
@@ -120,6 +122,9 @@ int main() {
     for (int kind = 0; kind <= 4; ++kind)
         for (bool translated : {false, true})
             for (bool hot : {false, true}) scenario(kind, translated, hot, true);
+    for (int kind = 0; kind <= 4; ++kind)   // (Asynchronous: a pending pipeline of a draw that writes memory still waits)
+        for (bool translated : {false, true})
+            for (bool hot : {false, true}) scenario(kind, translated, hot, false, 1);
     scenario(1, true, false, false);
     scenario(1, false, false, false);
     scenario(0, false, false, false);
