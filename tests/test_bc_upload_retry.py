@@ -22,8 +22,13 @@ def main():
     failed = failed[:failed.index("} else {")]
     if "tex->uploaded = true" in failed or "tex->bc_retry_frame = frame_no + 30;" not in failed:
         raise SystemExit("a BC3 texture whose upload failed is marked uploaded (drawn as noise, never made again)")
-    if "if (tex->bc && !tex->uploaded && tex->bc_retry_frame > frame_no) return tex;" not in tex:
-        raise SystemExit("a failed BC3 upload is tried again every submission (it stages the whole ASTC source)")
+    if "if (tex->bc && !tex->uploaded && tex->bc_retry_frame > frame_no) return nullptr;" not in tex:
+        raise SystemExit("a waiting BC3 texture is handed back to be sampled (its image was never written: noise), or tried every submission")
+    if "return nullptr;" not in failed:
+        raise SystemExit("a BC3 upload that failed still hands the texture to the draw of the same recording (noise)")
+    draw = (VK / "vk_draw.cpp").read_text(encoding="utf-8")
+    if "if (!(known && !tex && (use == ViewUse::Sample || use == ViewUse::Storage)))" not in draw:
+        raise SystemExit("a texture withheld from sampling is cached as missing, never looked at again after its retry frame")
     upload = tex[tex.index("bool upload_astc_gpu(Texture& tex, uint64_t total, const Ranges* dirty) {"):]
     upload = upload[:upload.index("\n}\n")]
     if upload.count("return false;") != upload.count("astc_fail = \"") or "no memory for the BC3 scratch" not in upload:

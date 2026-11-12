@@ -2748,7 +2748,8 @@ Texture* texture_touch(Texture* tex, bool for_sampling) {
     }
     // (hookshot) a BC3 image whose last upload failed waits before the next try: its upload stages the whole ASTC source (some
     // 200 MB for a terrain array), not to be repeated every submission while the memory it needs is not there
-    if (tex->bc && !tex->uploaded && tex->bc_retry_frame > frame_no) return tex;
+    // (nullptr, as upload_defer: its image was never written, a draw would sample uninitialized memory; the dummy is bound)
+    if (tex->bc && !tex->uploaded && tex->bc_retry_frame > frame_no) return nullptr;
     const auto up0 = std::chrono::steady_clock::now();
     const bool up_ok = upload(*tex, partial || sparse_written ? &dirty : nullptr);
     {   // (an upload over 15 ms: what it was, 60 of them)
@@ -2820,6 +2821,7 @@ Texture* texture_touch(Texture* tex, bool for_sampling) {
         if (told++ < 40)
             logf("vk: BC3 texture #%u %#llx %ux%u x%u: its upload failed (%s): tried again in 30 frames", tex->id,
                  (unsigned long long)tex->gpu, tex->width, tex->height, tex->layers, astc_fail ? astc_fail : "unknown");
+        return nullptr;   // (this recording too: not sampled until an upload has written it)
     } else {
         tex->uploaded = true;   // (not retried every draw; a write to its memory tries again)
         tex->upload_gen = gen;

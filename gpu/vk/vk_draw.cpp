@@ -2687,7 +2687,9 @@ VkImageView texture_view_of(uint32_t handle, VkImageViewType want, ViewUse use, 
                      has_view && v.set_format ? v.format : 0, has_view && v.set_target ? v.target : -1, (int)want, (int)use);
         }
     }
-    handle_hits()[key] = {view, tex, level, version, dgen, use == ViewUse::Sample || use == ViewUse::Storage, texture_epoch()};
+    // (a known texture withheld from sampling for now, an upload deferred or failed: not cached, or it is never looked at again)
+    if (!(known && !tex && (use == ViewUse::Sample || use == ViewUse::Storage)))
+        handle_hits()[key] = {view, tex, level, version, dgen, use == ViewUse::Sample || use == ViewUse::Storage, texture_epoch()};
     if (tex_out) *tex_out = tex;
     if (level_out) *level_out = level;
     return view;
