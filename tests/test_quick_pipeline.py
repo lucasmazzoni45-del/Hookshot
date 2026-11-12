@@ -6,7 +6,7 @@ quick_pipeline is compiled as it is in vk_draw.cpp, beside a stand-in driver tha
 it, or cannot make it, and a worker whose full build lands while the stand-in is built: the full build is never run in the
 draw, a stand-in never replaces a full build, and one that lost the race is destroyed. The source checks cover the rest of
 the change: the stand-in's build flags and caches, the Shader compile row (Wait where needed by default), the translation
-jobs ahead of the pipeline builds, and the workers' count.
+jobs ahead of the pipeline builds.
 python -I -B tests/test_quick_pipeline.py
 """
 import argparse
@@ -135,8 +135,8 @@ def between(text, start, end="\n}\n"):
     return text[a:text.index(end, a)]
 
 
-def check_source(draw, shader, jobs, menu, menu_h):
-    """What the fixture does not run: the stand-in's flags and caches, the Shader compile row, the jobs' order and count"""
+def check_source(draw, shader, menu, menu_h):
+    """What the fixture does not run: the stand-in's flags and caches, the Shader compile row, the translation jobs' order"""
     build = between(draw, "VkPipeline build_graphics(const Program& p, const NvnState& s, const Targets& at, "
                           "VkPrimitiveTopology topo, int part, bool* cold) {")
     if "if (noopt || quick_build) ci.flags |= VK_PIPELINE_CREATE_DISABLE_OPTIMIZATION_BIT;" not in build:
@@ -176,8 +176,7 @@ def main():
     args = parser.parse_args()
     vk = ROOT / "gpu" / "vk"
     draw = (vk / "vk_draw.cpp").read_text(encoding="utf-8")
-    check_source(draw, (vk / "vk_shader.cpp").read_text(encoding="utf-8"), (vk / "vk_jobs.cpp").read_text(encoding="utf-8"),
-                 (vk / "vk_menu.cpp").read_text(encoding="utf-8"), (vk / "vk_menu.h").read_text(encoding="utf-8"))
+    check_source(draw, (vk / "vk_shader.cpp").read_text(encoding="utf-8"), (vk / "vk_menu.cpp").read_text(encoding="utf-8"), (vk / "vk_menu.h").read_text(encoding="utf-8"))
     code = between(draw, "bool quick_pipeline(PipeEntry& e, const Program& p, const NvnState& s, const Targets& at, "
                          "VkPrimitiveTopology topo) {") + "\n}\n"
     with tempfile.TemporaryDirectory(prefix="quick-pipeline-") as tmp:
