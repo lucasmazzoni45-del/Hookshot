@@ -33,7 +33,7 @@ def main():
     direct = direct[:direct.index('return remember(')]
     assert 'if (written) note_direct_write(*p, g0 - p->lo, size);' in direct, 'a written direct binding keeps the read-back wait and the direct_write_epoch bookkeeping'
     switch = block(text, 'bool rb_direct_on(')
-    assert 'atoi' not in switch and 'env_value_off(e)' in switch, 'the switch reads its value by the env_value_off rule'
+    assert 'atoi' not in switch and 'env_value_off(e)' in switch and 'vendorID == 0x1002' in switch, 'the switch reads its value by the env_value_off rule, and is on by default for AMD only'
     assert 'size > kRbDirectMax' in block(text, 'void memory_rb_direct_note('), 'only small ranges go direct'
     assert 'cut_rb_direct' not in text, 'write-backs of mirror bindings must not be cut'
     assert 'rb_direct_forget_pool(old->lo, old->hi);' in block(text, 'void retire_pool(std::map<uint64_t, Pool>::iterator it) {'), 'a retired pool drops its ranges'
@@ -89,9 +89,10 @@ int main(int argc, char** argv) {
                 e['RX_VK_RB_DIRECT'] = value
             return subprocess.run([str(exe), vendor], check=True, env=e, capture_output=True, text=True).stdout.strip()
 
-        assert switch('10de') == 'off', 'off by default on NVIDIA'
-        assert switch('1002') == 'on' and switch('8086') == 'on', 'on by default elsewhere'
-        assert switch('10de', '1') == 'on' and switch('10de', 'on') == 'on', 'an explicit value overrides on NVIDIA'
+        assert switch('1002') == 'on', 'on by default on AMD'
+        assert switch('10de') == 'off' and switch('8086') == 'off', 'off by default on NVIDIA and Intel'
+        for other in ('10de', '8086'):
+            assert switch(other, '1') == 'on' and switch(other, 'on') == 'on', f'an explicit value turns it on for {other}'
         for off in ('0', 'off', 'false', 'No', ''):
             assert switch('1002', off) == 'off', f'RX_VK_RB_DIRECT={off!r} is off'
 

@@ -2523,18 +2523,18 @@ namespace {
 // Small ranges the CPU reads back (nvnMemoryPoolInvalidateMappedRange, nvnBufferInvalidateMappedRange) are the GPU's results: from the first
 // invalidate on, a binding wholly inside one is bound in guest memory, not the mirror, so the GPU's writes land where the CPU reads them, as on
 // the console's coherent memory, with no write-back to copy them. The CPU's read still waits for the submission (wb_pages_note below). Only
-// small ranges: a shader reaching large bindings in imported memory is slow on some drivers. Off by default on NVIDIA. RX_VK_RB_DIRECT=0: mirrored and written back
+// small ranges: a shader reaching large bindings in imported memory is slow on some drivers. On by default on AMD only (measured there; NVIDIA and Intel keep the mirror and write-back). RX_VK_RB_DIRECT=1: on any GPU; =0: mirrored and written back
 constexpr uint64_t kRbDirectMax = 64u << 10;
 std::mutex rb_direct_mu;
 std::unordered_set<uint32_t> rb_direct_pages;
 std::vector<uint32_t> rb_direct_pending;
 std::atomic<int> rb_direct_pending_n{0};
 std::atomic<int64_t> st_rb_direct_binds{0}, st_rb_direct_bytes{0};
-// (off by default on NVIDIA (vendorID 0x10DE); an explicit value, either way, decides: env_value_off, the switches' one rule)
+// (on by default on AMD only (vendorID 0x1002); an explicit value, either way, decides: env_value_off, the switches' one rule)
 bool rb_direct_on() {
     static const bool on = [] {
         const char* e = getenv("RX_VK_RB_DIRECT");
-        return e ? !env_value_off(e) : dev.props.vendorID != 0x10DE;
+        return e ? !env_value_off(e) : dev.props.vendorID == 0x1002;
     }();
     return on && mirror_on();
 }
