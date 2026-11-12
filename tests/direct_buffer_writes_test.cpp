@@ -42,6 +42,12 @@ struct ParLock { ParLock() {} ~ParLock() {} };
 static void texture_gpu_wrote(uint64_t, uint64_t) { ++texture_writes; }
 static void rb_hazard_locked(uint64_t lo, uint64_t hi) { ++hazards; hazard_lo = lo; hazard_hi = hi; }
 static bool mirror_on() { return mirrors; }
+// (the read-back direct path of PR #1150: off in this fixture, so the direct-write bookkeeping under test is the only path taken)
+static std::atomic<int> rb_direct_pending_n{0};
+static std::atomic<int64_t> st_rb_direct_binds{0}, st_rb_direct_bytes{0};
+static bool rb_direct_on() { return false; }
+static bool rb_direct_inside(uint64_t, uint64_t) { return false; }
+static void rb_direct_apply() {}
 static void note_in_place_read(bool = false) {}   // (the readback's part wait: tests/test_readback_part.py checks every such read is noted)
 static Pool* pool_of(uint64_t guest, uint64_t size) {
     ++lookups;
