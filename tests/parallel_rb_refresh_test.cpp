@@ -108,6 +108,7 @@ thread_local VkCommandBuffer up_cmd = VK_NULL_HANDLE;
 uint64_t rec_value = 0;
 thread_local bool up_used = false;
 thread_local uint64_t tl_seg = 0;
+thread_local uint64_t bc_part_texels = 0;   // (vk_texture.cpp: what this recording's BC3 upload holds; texture_begin_recording resets it)
 uint32_t epoch = 0;
 #include "rb_texture.inc"
 

@@ -181,6 +181,7 @@ bool memory_rb_refresh(VkCommandBuffer) { return false; }
 void memory_rb_recording_begun() {}
 VkCommandBuffer last_barrier_cmd = VK_NULL_HANDLE;
 thread_local VkCommandBuffer last_pass_end_cmd = VK_NULL_HANDLE;
+thread_local uint64_t bc_part_texels = 0;   // (vk_texture.cpp: what this recording's BC3 upload holds; texture_begin_recording resets it)
 bool is_bc(VkFormat) { return false; }
 bool is_astc(VkFormat) { return false; }
 #include "init_upload.inc"
