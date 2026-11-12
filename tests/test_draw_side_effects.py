@@ -161,12 +161,12 @@ def main():
                 env["RX_VK_PIPE_SKIP"] = mode
             result = subprocess.run([str(exe)], env=env, capture_output=True, text=True, timeout=10)
             lines = result.stdout.splitlines()
-            complete = "0 failures; fake CPU decision check only" in lines and sum(l.startswith("PASS kind") for l in lines) == 23
+            complete = "0 failures; fake CPU decision check only" in lines and sum(l.startswith("PASS kind") for l in lines) == 43
             ok = result.returncode == 0 and complete
             print(f"RX_VK_PIPE_SKIP={mode if mode is not None else 'unset'}: {'PASS' if ok else 'FAIL'}")
             if not ok:
                 failed = True
-                print("fixture failed or did not finish all 23 cases\n" + result.stdout + result.stderr)
+                print("fixture failed or did not finish all 43 cases\n" + result.stdout + result.stderr)
         if failed:
             raise SystemExit(1)
     print("PASS: unknown translations wait by default; mode 2 restores their old skip; translated writers wait; hot draws do not scan stages")
