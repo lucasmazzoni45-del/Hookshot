@@ -536,8 +536,9 @@ std::atomic<bool> wide_possible{false};   // (a margin and the setting on: vk_re
 WideSides wide_sides() {
     WideSides w;
     if (!host || !host->wide_menus) return w;
-    // (KEEP_VTABLES 1 and 3: the pause and map menus. 0, the item wheel's background, and 2, the fades, keep covering the whole picture)
-    constexpr uint32_t kMenus = 0xa;
+    // (KEEP_VTABLES 1: the pause and map menus. 0, the item wheel's background, 2, the event fade, and 3, the loading screen's
+    // fade, keep covering the whole picture: bit 3 cleared too, the fade was squeezed into the middle and the world showed beside it)
+    constexpr uint32_t kMenus = 0x2;
     const float margin = host->wide_menus(opts.wide_menus ? 0xfu & ~kMenus : 0xfu);
     extern std::atomic<int64_t> world_drawn_at;
     extern int64_t presents_now;
